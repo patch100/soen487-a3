@@ -23,9 +23,9 @@ public class WordCount {
         Configuration config = new Configuration();
 
         // parse passed arguments
-        String[] files = new GenericOptionsParser(config, args).getRemainingArgs();
+        String[] arguments = new GenericOptionsParser(config, args).getRemainingArgs();
 
-        if(files.length != 3) {
+        if(arguments.length != 3) {
             System.out.println("program requires three command line arguments");
             System.out.println("1. input text file");
             System.out.println("2. output file");
@@ -33,13 +33,13 @@ public class WordCount {
         }
 
         // input book
-        Path input = new Path(files[0]);
+        Path input = new Path(arguments[0]);
 
         // output result file
-        Path output = new Path(files[1]);
+        Path output = new Path(arguments[1]);
 
         // set top N
-        config.set("N", files[2]);
+        config.set("N", arguments[2]);
 
         // prepare job
         Job job = new Job(config, "assignment3");
@@ -48,8 +48,6 @@ public class WordCount {
         job.setReducerClass(ReduceForWordCount.class);
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(IntWritable.class);
-
-
 
         // prepare input/output/exit
         FileInputFormat.addInputPath(job, input);
@@ -74,44 +72,54 @@ public class WordCount {
 
     public static class ReduceForWordCount extends Reducer<Text, IntWritable, Text, IntWritable>
     {
-        private Map<Text, IntWritable> countMap = new HashMap<Text, IntWritable>();
+        private Map<Text, IntWritable> wordSumMap = new HashMap<Text, IntWritable>();
 
         @Override
         public void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
 
-            // computes the number of occurrences of a single word
+            // count the occurrences of each word
             int sum = 0;
             for (IntWritable val : values) {
                 sum += val.get();
             }
 
-            // puts the number of occurrences of this word into the map.
-            // We need to create another Text object because the Text instance
-            // we receive is the same for all the words
-            countMap.put(new Text(key), new IntWritable(sum));
+            // save the word and its occurrences to a map to be sorted
+            wordSumMap.put(new Text(key), new IntWritable(sum));
         }
 
         @Override
         protected void cleanup(Context context) throws IOException, InterruptedException {
 
-            Map<Text, IntWritable> sortedMap = sortByValue(countMap);
+            // sort the words so the most popular ones are at the top
+            Map<Text, IntWritable> topWords = sortByValueDescending(wordSumMap);
 
-            int counter = 0;
+            int count = 0;
 
+            // retrieve amount of words to print out from the configuration
             Configuration config = context.getConfiguration();
             int N = Integer.parseInt(config.get("N"));
 
-            for (Text key : sortedMap.keySet()) {
-                if (counter++ == N) {
+            // print out the top N words
+            for (Text word : topWords.keySet()) {
+
+                // break when we hit N
+                if (count == N)
                     break;
-                }
-                context.write(key, sortedMap.get(key));
+                context.write(word, topWords.get(word));
+                count++;
             }
         }
 
-        public static <K, V extends Comparable<? super V>> Map<K, V> sortByValue( Map<K, V> map )
+        /***********************************************************************************************
+        *    Title: Sort Map by Value
+        *    Author: Carter Page
+        *    Date: Aug 26, 2016
+        *    Code version: 8
+        *    Availability: http://stackoverflow.com/questions/109383/sort-a-mapkey-value-by-values-java
+        ************************************************************************************************/
+        private static <K, V extends Comparable<? super V>> Map<K, V> sortByValueDescending(Map<K, V> map)
         {
-            List<Map.Entry<K, V>> list = new LinkedList<Map.Entry<K, V>>( map.entrySet() );
+            List<Map.Entry<K, V>> list = new LinkedList<Map.Entry<K, V>>(map.entrySet());
 
             Collections.sort( list, new Comparator<Map.Entry<K, V>>()
             {
@@ -121,6 +129,7 @@ public class WordCount {
                 }
             });
 
+            // reverse list so it is descending
             Collections.reverse(list);
 
             Map<K, V> result = new LinkedHashMap<K, V>();
